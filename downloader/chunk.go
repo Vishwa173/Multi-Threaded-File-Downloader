@@ -2,30 +2,48 @@ package downloader
 
 import "fmt"
 
-func SplitIntoChunks(size int64, chunkCount int) ([]Chunk, error) {
+const DefaultChunkSize = 8 * 1024 * 1024
+
+func SplitIntoChunks(
+	size int64,
+	chunkSize int64,
+) ([]Chunk, error) {
+
 	if size <= 0 {
-		return nil, fmt.Errorf("size must be greater than zero")
-	}
-	if chunkCount <= 0 {
-		return nil, fmt.Errorf("chunkCount must be greater than zero")
+		return nil, fmt.Errorf(
+			"invalid file size",
+		)
 	}
 
-	chunkSize := size / int64(chunkCount)
+	if chunkSize <= 0 {
+		return nil, fmt.Errorf(
+			"invalid chunk size",
+		)
+	}
 
-	chunks := make([]Chunk, chunkCount)
+	var chunks []Chunk
+
 	var start int64 = 0
+	index := 0
 
-	for i := 0; i < chunkCount; i++ {
+	for start < size {
+
 		end := start + chunkSize - 1
-		if i == chunkCount-1 {
-			end = size - 1 
+
+		if end >= size {
+			end = size - 1
 		}
-		chunks[i] = Chunk{
-			Index: i,
-			Start: start,
-			End: end,
-		}
+
+		chunks = append(chunks, Chunk{
+			Index:   index,
+			Start:   start,
+			End:     end,
+			Status:  ChunkPending,
+			Retries: 0,
+		})
+
 		start = end + 1
+		index++
 	}
 
 	return chunks, nil

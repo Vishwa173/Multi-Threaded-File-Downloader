@@ -98,14 +98,6 @@ func DownloadFile(url, output string, workers int) error {
 		)
 	}
 
-	chunks, err := SplitIntoChunks(size, workers)
-	if err != nil {
-		return fmt.Errorf(
-			"error splitting chunks: %w",
-			err,
-		)
-	}
-
 	tempDir, err := utils.CreateTempDir("")
 	if err != nil {
 		return fmt.Errorf(
@@ -116,7 +108,10 @@ func DownloadFile(url, output string, workers int) error {
 
 	defer os.RemoveAll(tempDir)
 
-	scheduler := NewScheduler(chunks)
+	scheduler := NewScheduler(
+		size,
+		DefaultChunkSize,
+	)
 
 	metrics := NewMetrics(size)
 
@@ -210,6 +205,5 @@ func DownloadFile(url, output string, workers int) error {
 	}
 
 	LogWorker(-1, "download completed")
-
 	return nil
 }

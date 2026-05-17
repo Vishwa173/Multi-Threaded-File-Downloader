@@ -26,4 +26,5 @@ type WorkerStats struct {
 	BytesDownloaded int64
 	LastActivity    time.Time
 	Failures        int
+	CurrentSpeed float64
 }

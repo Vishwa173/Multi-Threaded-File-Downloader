@@ -68,3 +68,16 @@ func (m *Metrics) MarkChunkFailed() {
 
 	m.FailedChunks++
 }
+
+func (m *Metrics) UpdateWorkerSpeed(
+	workerID int,
+	speed float64,
+) {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	worker := m.WorkerMetrics[workerID]
+
+	worker.CurrentSpeed = speed
+}

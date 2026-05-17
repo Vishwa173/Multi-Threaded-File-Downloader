@@ -20,23 +20,30 @@ func Worker(
 	metrics *Metrics,
 	errCh chan error,
 ) {
-
 	LogWorker(workerID, "started")
+	chunkIndex := 0
 
-	for chunk := range scheduler.ChunkQueue {
+	for {
+		metrics.mu.RLock()
+
+		workerSpeed := metrics.
+			WorkerMetrics[workerID].
+			CurrentSpeed
+
+		metrics.mu.RUnlock()
+		chunk, ok := scheduler.GetNextChunk(
+			workerSpeed,
+			chunkIndex,
+		)
+
+		if !ok {
+			break
+		}
 
 		chunk.WorkerID = workerID
 		chunk.Status = ChunkDownloading
 
-		LogChunk(
-			chunk.Index,
-			fmt.Sprintf(
-				"worker %d downloading [%d-%d]",
-				workerID,
-				chunk.Start,
-				chunk.End,
-			),
-		)
+		startTime := time.Now()
 
 		err := DownloadChunk(
 			url,
@@ -46,18 +53,33 @@ func Worker(
 		)
 
 		if err != nil {
-
 			metrics.MarkChunkFailed()
-
 			errCh <- err
 			continue
 		}
 
+		duration := time.Since(startTime).Seconds()
+		bytes := chunk.End - chunk.Start + 1
+		speed := float64(bytes) / duration
+
+		metrics.UpdateWorkerSpeed(
+			workerID,
+			speed,
+		)
+
 		metrics.MarkChunkCompleted()
 
-		LogChunk(chunk.Index, "completed")
-	}
+		LogChunk(
+			chunk.Index,
+			fmt.Sprintf(
+				"worker=%d speed=%.2f MB/s",
+				workerID,
+				speed/(1024*1024),
+			),
+		)
 
+		chunkIndex++
+	}
 	LogWorker(workerID, "finished")
 }
 
