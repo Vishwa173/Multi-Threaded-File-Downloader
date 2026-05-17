@@ -25,10 +25,7 @@ func Worker(
 
 	for {
 		metrics.mu.RLock()
-
-		workerSpeed := metrics.
-			WorkerMetrics[workerID].
-			CurrentSpeed
+		workerSpeed := metrics.WorkerMetrics[workerID].AverageSpeed
 
 		metrics.mu.RUnlock()
 		chunk, ok := scheduler.GetNextChunk(

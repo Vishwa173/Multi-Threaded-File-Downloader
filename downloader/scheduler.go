@@ -37,20 +37,19 @@ func (s *Scheduler) GetNextChunk(
 
 	chunkSize := s.BaseChunkSize
 
-	if workerSpeed > 30*1024*1024 {
-		chunkSize *= 2
+	multiplier := workerSpeed / (10 * 1024 * 1024)
+	
+	if multiplier < 0.5 {
+		multiplier = 0.5
+	}
+	
+	if multiplier > 4 {
+		multiplier = 4
 	}
 
-	if workerSpeed < 10*1024*1024 {
-		chunkSize /= 2
-	}
-
-	if chunkSize < 1*1024*1024 {
-		chunkSize = 1 * 1024 * 1024
-	}
+	chunkSize = max(int64(float64(chunkSize) * multiplier,), 1 * 1024 * 1024)
 
 	start := s.NextByte
-
 	end := start + chunkSize - 1
 
 	if end >= s.FileSize {

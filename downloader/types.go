@@ -27,4 +27,5 @@ type WorkerStats struct {
 	LastActivity    time.Time
 	Failures        int
 	CurrentSpeed float64
+	AverageSpeed float64
 }

@@ -71,13 +71,19 @@ func (m *Metrics) MarkChunkFailed() {
 
 func (m *Metrics) UpdateWorkerSpeed(
 	workerID int,
-	speed float64,
+	newSpeed float64,
 ) {
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	worker := m.WorkerMetrics[workerID]
+	alpha := 0.3
 
-	worker.CurrentSpeed = speed
+	if worker.AverageSpeed == 0 {
+		worker.AverageSpeed = newSpeed
+	}else {
+		worker.AverageSpeed = alpha*newSpeed + (1-alpha)*worker.AverageSpeed
+	}
+
+	worker.CurrentSpeed = newSpeed
 }
