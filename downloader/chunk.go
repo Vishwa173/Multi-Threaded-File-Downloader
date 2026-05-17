@@ -2,13 +2,6 @@ package downloader
 
 import "fmt"
 
-type Chunk struct {
-	Index int
-	Start int64
-	End   int64
-	Completed bool
-}
-
 func SplitIntoChunks(size int64, chunkCount int) ([]Chunk, error) {
 	if size <= 0 {
 		return nil, fmt.Errorf("size must be greater than zero")

@@ -86,86 +86,130 @@ func resolveFinalURL(url string) (string, error) {
     return resp.Request.URL.String(), nil
 }
 
-func DownloadFile(url, output string, threads int)error{
-	size,err := getFileSize(url)
-	if err != nil{
-		return fmt.Errorf("error getting file size:%w",err)
+func DownloadFile(url, output string, workers int) error {
+
+	InitLogger()
+
+	size, err := getFileSize(url)
+	if err != nil {
+		return fmt.Errorf(
+			"error getting file size: %w",
+			err,
+		)
 	}
 
-	chunks,err := SplitIntoChunks(size,threads)
-	if err != nil{
-		return fmt.Errorf("error splitting into chunks: %w",err)
+	chunks, err := SplitIntoChunks(size, workers)
+	if err != nil {
+		return fmt.Errorf(
+			"error splitting chunks: %w",
+			err,
+		)
 	}
 
-	tempDir,err := utils.CreateTempDir("")
-	if err != nil{
-		return fmt.Errorf("error creating tempdir: %w",err)
+	tempDir, err := utils.CreateTempDir("")
+	if err != nil {
+		return fmt.Errorf(
+			"error creating temp dir: %w",
+			err,
+		)
 	}
-	
+
+	defer os.RemoveAll(tempDir)
+
+	scheduler := NewScheduler(chunks)
+
+	metrics := NewMetrics(size)
+
 	var wg sync.WaitGroup
-	errch := make(chan error, threads)
 
-	for _,chunk := range chunks{
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+
+		metrics.RegisterWorker(i)
+
 		wg.Add(1)
 
-		go func(c Chunk){
+		go func(workerID int) {
+
 			defer wg.Done()
 
-			err := DownloadChunk(url,c,tempDir)
-			if err != nil{
-				errch <- err
-			}
-		}(chunk)
+			Worker(
+				workerID,
+				url,
+				tempDir,
+				scheduler,
+				metrics,
+				errCh,
+			)
+
+		}(i)
 	}
 
 	done := make(chan struct{})
 
-	go func(){
-		ticker := time.NewTicker(1 * time.Millisecond) 
+	go func() {
 
-		var lastBytes int64 = 0
-		var lastTime = time.Now()
+		ticker := time.NewTicker(
+			500 * time.Millisecond,
+		)
 
-		for{
-			select{
-			case <- ticker.C:
-				downloaded := getDownloadedBytes(tempDir,threads)
+		defer ticker.Stop()
 
-				now := time.Now()
+		for {
 
-				deltaBytes := downloaded - lastBytes
-				deltaTime := now.Sub(lastTime).Seconds()
+			select {
 
-				speed := float64(deltaBytes)/deltaTime
-				percent := float64(downloaded)/float64(size) * 100
+			case <-ticker.C:
 
-				lastBytes = downloaded
-				lastTime = now
+				metrics.mu.RLock()
 
-				printProgress(percent,speed,downloaded,size)
+				downloaded := metrics.DownloadedBytes
+				total := metrics.TotalBytes
 
-			case <- done:
-				return 
+				metrics.mu.RUnlock()
+
+				percent := float64(downloaded) /
+					float64(total) * 100
+
+				printProgress(
+					percent,
+					downloaded,
+					total,
+				)
+
+			case <-done:
+				return
 			}
 		}
 	}()
 
 	wg.Wait()
-	close(done)
-	close(errch)
 
-	for err := range errch{
-		if err != nil{
+	close(done)
+
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
 			return err
 		}
 	}
 
-	err = utils.MergeChunks(output,threads,tempDir)
-	if err != nil{
-		return fmt.Errorf("merge failed: %w",err)
+	err = utils.MergeChunks(
+		output,
+		workers,
+		tempDir,
+	)
+
+	if err != nil {
+		return fmt.Errorf(
+			"merge failed: %w",
+			err,
+		)
 	}
 
-	os.RemoveAll(tempDir)
+	LogWorker(-1, "download completed")
 
 	return nil
 }

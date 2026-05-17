@@ -1,54 +1,147 @@
 package downloader
 
-import(
+import (
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
+
 	"multi-threaded-downloader/utils"
 )
 
 const maxRetries = 3
 
-func DownloadChunk(url string, chunk Chunk, tempDir string) error {
+func Worker(
+	workerID int,
+	url string,
+	tempDir string,
+	scheduler *Scheduler,
+	metrics *Metrics,
+	errCh chan error,
+) {
 
-    partPath := filepath.Join(tempDir, fmt.Sprintf("chunk-%d.part", chunk.Index))
+	LogWorker(workerID, "started")
 
-    f, err := os.Create(partPath)
-    if err != nil {
-        return fmt.Errorf("chunk %d: could not create part file: %w", chunk.Index, err)
-    }
-    defer f.Close()
+	for chunk := range scheduler.ChunkQueue {
 
-    for attempt := 1; attempt <= maxRetries; attempt++ {
+		chunk.WorkerID = workerID
+		chunk.Status = ChunkDownloading
 
-        body, err := utils.DownloadRange(url, chunk.Start, chunk.End)
-        if err != nil {
-            if attempt == maxRetries {
-                return fmt.Errorf("chunk %d: failed after %d attempts: %w", chunk.Index, attempt, err)
-            }
+		LogChunk(
+			chunk.Index,
+			fmt.Sprintf(
+				"worker %d downloading [%d-%d]",
+				workerID,
+				chunk.Start,
+				chunk.End,
+			),
+		)
 
-            sleep := time.Duration(attempt*attempt) * 200 * time.Millisecond
-            time.Sleep(sleep)
-            continue
-        }
+		err := DownloadChunk(
+			url,
+			chunk,
+			tempDir,
+			metrics,
+		)
 
-        _, copyErr := io.Copy(f, body)
-        body.Close()
+		if err != nil {
 
-        if copyErr != nil {
-            if attempt == maxRetries {
-                return fmt.Errorf("chunk %d: copy failed after %d attempts: %w", chunk.Index, attempt, copyErr)
-            }
+			metrics.MarkChunkFailed()
 
-            sleep := time.Duration(attempt*attempt) * 200 * time.Millisecond
-            time.Sleep(sleep)
-            continue
-        }
+			errCh <- err
+			continue
+		}
 
-        return nil
-    }
+		metrics.MarkChunkCompleted()
 
-    return fmt.Errorf("chunk %d: unreachable error", chunk.Index)
+		LogChunk(chunk.Index, "completed")
+	}
+
+	LogWorker(workerID, "finished")
+}
+
+func DownloadChunk(
+	url string,
+	chunk Chunk,
+	tempDir string,
+	metrics *Metrics,
+) error {
+
+	partPath := filepath.Join(
+		tempDir,
+		fmt.Sprintf("chunk-%d.part", chunk.Index),
+	)
+
+	f, err := os.Create(partPath)
+	if err != nil {
+		return fmt.Errorf(
+			"chunk %d: create failed: %w",
+			chunk.Index,
+			err,
+		)
+	}
+
+	defer f.Close()
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+
+		body, err := utils.DownloadRange(
+			url,
+			chunk.Start,
+			chunk.End,
+		)
+
+		if err != nil {
+
+			if attempt == maxRetries {
+				return fmt.Errorf(
+					"chunk %d failed after retries: %w",
+					chunk.Index,
+					err,
+				)
+			}
+
+			sleep := time.Duration(
+				attempt*attempt,
+			) * 300 * time.Millisecond
+
+			time.Sleep(sleep)
+
+			continue
+		}
+
+		written, copyErr := io.Copy(f, body)
+
+		body.Close()
+
+		if copyErr != nil {
+
+			if attempt == maxRetries {
+				return fmt.Errorf(
+					"chunk %d copy failed: %w",
+					chunk.Index,
+					copyErr,
+				)
+			}
+
+			sleep := time.Duration(
+				attempt*attempt,
+			) * 300 * time.Millisecond
+
+			time.Sleep(sleep)
+
+			continue
+		}
+
+		metrics.AddDownloadedBytes(written)
+		metrics.UpdateWorker(chunk.WorkerID, written)
+
+		return nil
+	}
+
+	return fmt.Errorf(
+		"chunk %d unreachable error",
+		chunk.Index,
+	)
 }
