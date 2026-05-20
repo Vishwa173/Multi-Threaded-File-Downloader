@@ -25,7 +25,9 @@ func Worker(
 
 	for {
 		metrics.mu.RLock()
-		workerSpeed := metrics.WorkerMetrics[workerID].AverageSpeed
+		workerSpeed := metrics.
+			WorkerMetrics[workerID].
+			AverageSpeed
 
 		metrics.mu.RUnlock()
 		chunk, ok := scheduler.GetNextChunk(
@@ -50,13 +52,18 @@ func Worker(
 		)
 
 		if err != nil {
+			LogError(err)
 			metrics.MarkChunkFailed()
-			errCh <- err
+			scheduler.RequeueChunk(chunk)
 			continue
 		}
 
-		duration := time.Since(startTime).Seconds()
+		duration := time.Since(
+			startTime,
+		).Seconds()
+
 		bytes := chunk.End - chunk.Start + 1
+
 		speed := float64(bytes) / duration
 
 		metrics.UpdateWorkerSpeed(
@@ -69,12 +76,12 @@ func Worker(
 		LogChunk(
 			chunk.Index,
 			fmt.Sprintf(
-				"worker=%d speed=%.2f MB/s",
+				"worker=%d speed=%.2f MB/s retries=%d",
 				workerID,
 				speed/(1024*1024),
+				chunk.Retries,
 			),
 		)
-
 		chunkIndex++
 	}
 	LogWorker(workerID, "finished")
@@ -95,7 +102,7 @@ func DownloadChunk(
 	f, err := os.Create(partPath)
 	if err != nil {
 		return fmt.Errorf(
-			"chunk %d: create failed: %w",
+			"chunk %d create failed: %w",
 			chunk.Index,
 			err,
 		)
@@ -103,64 +110,29 @@ func DownloadChunk(
 
 	defer f.Close()
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	body, err := utils.DownloadRange(
+		url,
+		chunk.Start,
+		chunk.End,
+	)
 
-		body, err := utils.DownloadRange(
-			url,
-			chunk.Start,
-			chunk.End,
-		)
-
-		if err != nil {
-
-			if attempt == maxRetries {
-				return fmt.Errorf(
-					"chunk %d failed after retries: %w",
-					chunk.Index,
-					err,
-				)
-			}
-
-			sleep := time.Duration(
-				attempt*attempt,
-			) * 300 * time.Millisecond
-
-			time.Sleep(sleep)
-
-			continue
-		}
-
-		written, copyErr := io.Copy(f, body)
-
-		body.Close()
-
-		if copyErr != nil {
-
-			if attempt == maxRetries {
-				return fmt.Errorf(
-					"chunk %d copy failed: %w",
-					chunk.Index,
-					copyErr,
-				)
-			}
-
-			sleep := time.Duration(
-				attempt*attempt,
-			) * 300 * time.Millisecond
-
-			time.Sleep(sleep)
-
-			continue
-		}
-
-		metrics.AddDownloadedBytes(written)
-		metrics.UpdateWorker(chunk.WorkerID, written)
-
-		return nil
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf(
-		"chunk %d unreachable error",
-		chunk.Index,
+	written, err := io.Copy(f, body)
+
+	body.Close()
+
+	if err != nil {
+		return err
+	}
+
+	metrics.AddDownloadedBytes(written)
+	metrics.UpdateWorker(
+		chunk.WorkerID,
+		written,
 	)
+
+	return nil
 }

@@ -87,7 +87,6 @@ func resolveFinalURL(url string) (string, error) {
 }
 
 func DownloadFile(url, output string, workers int) error {
-
 	InitLogger()
 
 	size, err := getFileSize(url)

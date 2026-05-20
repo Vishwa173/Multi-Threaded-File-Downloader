@@ -1,6 +1,9 @@
 package downloader
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type Scheduler struct {
 	mu sync.Mutex
@@ -9,6 +12,8 @@ type Scheduler struct {
 	FileSize int64
 
 	BaseChunkSize int64
+
+	FailedQueue []Chunk
 }
 
 func NewScheduler(
@@ -31,25 +36,39 @@ func (s *Scheduler) GetNextChunk(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if len(s.FailedQueue) > 0 {
+
+		chunk := s.FailedQueue[0]
+
+		s.FailedQueue =
+			s.FailedQueue[1:]
+
+		return chunk, true
+	}
+
 	if s.NextByte >= s.FileSize {
 		return Chunk{}, false
 	}
 
 	chunkSize := s.BaseChunkSize
+	multiplier := workerSpeed /
+		(10 * 1024 * 1024)
 
-	multiplier := workerSpeed / (10 * 1024 * 1024)
-	
 	if multiplier < 0.5 {
 		multiplier = 0.5
 	}
-	
+
 	if multiplier > 4 {
 		multiplier = 4
 	}
 
-	chunkSize = max(int64(float64(chunkSize) * multiplier,), 1 * 1024 * 1024)
+	chunkSize = max(
+		int64(float64(chunkSize)*multiplier),
+		1*1024*1024,
+	)
 
 	start := s.NextByte
+
 	end := start + chunkSize - 1
 
 	if end >= s.FileSize {
@@ -65,4 +84,30 @@ func (s *Scheduler) GetNextChunk(
 		Status:  ChunkPending,
 		Retries: 0,
 	}, true
+}
+
+func (s *Scheduler) RequeueChunk(
+	chunk Chunk,
+) {
+
+	chunk.Status = ChunkFailed
+	chunk.Retries++
+
+	if chunk.Retries >= maxRetries {
+		return
+	}
+
+	backoff := time.Duration(
+		chunk.Retries*chunk.Retries,
+	) * 500 * time.Millisecond
+
+	time.Sleep(backoff)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.FailedQueue = append(
+		s.FailedQueue,
+		chunk,
+	)
 }
