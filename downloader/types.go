@@ -29,3 +29,11 @@ type WorkerStats struct {
 	CurrentSpeed float64
 	AverageSpeed float64
 }
+
+type Source struct {
+	URL string
+	Failures int
+	AverageSpeed float64
+	ActiveWorkers int
+	Healthy bool
+}

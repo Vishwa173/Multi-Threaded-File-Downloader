@@ -25,27 +25,25 @@ func Worker(
 
 	for {
 		metrics.mu.RLock()
-		workerSpeed := metrics.
-			WorkerMetrics[workerID].
-			AverageSpeed
 
+		workerSpeed := metrics.WorkerMetrics[workerID].AverageSpeed
 		metrics.mu.RUnlock()
+
 		chunk, ok := scheduler.GetNextChunk(
 			workerSpeed,
 			chunkIndex,
 		)
-
 		if !ok {
 			break
 		}
 
+		source := scheduler.SelectBestSource()
 		chunk.WorkerID = workerID
 		chunk.Status = ChunkDownloading
-
 		startTime := time.Now()
 
 		err := DownloadChunk(
-			url,
+			source.URL,
 			chunk,
 			tempDir,
 			metrics,
@@ -54,13 +52,16 @@ func Worker(
 		if err != nil {
 			LogError(err)
 			metrics.MarkChunkFailed()
+			scheduler.ReleaseSource(
+				source,
+				0,
+				false,
+			)
 			scheduler.RequeueChunk(chunk)
 			continue
 		}
 
-		duration := time.Since(
-			startTime,
-		).Seconds()
+		duration := time.Since(startTime,).Seconds()
 
 		bytes := chunk.End - chunk.Start + 1
 
@@ -71,13 +72,20 @@ func Worker(
 			speed,
 		)
 
+		scheduler.ReleaseSource(
+			source,
+			speed,
+			true,
+		)
+
 		metrics.MarkChunkCompleted()
 
 		LogChunk(
 			chunk.Index,
 			fmt.Sprintf(
-				"worker=%d speed=%.2f MB/s retries=%d",
+				"worker=%d source=%s speed=%.2f MB/s retries=%d",
 				workerID,
+				source.URL,
 				speed/(1024*1024),
 				chunk.Retries,
 			),

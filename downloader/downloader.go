@@ -107,27 +107,28 @@ func DownloadFile(url, output string, workers int) error {
 
 	defer os.RemoveAll(tempDir)
 
+	sources := []*Source{
+		{
+			URL: url,
+			Healthy: true,
+		},
+	}
+
 	scheduler := NewScheduler(
 		size,
 		DefaultChunkSize,
+		sources,
 	)
 
 	metrics := NewMetrics(size)
-
 	var wg sync.WaitGroup
-
 	errCh := make(chan error, workers)
 
 	for i := 0; i < workers; i++ {
-
 		metrics.RegisterWorker(i)
-
 		wg.Add(1)
-
 		go func(workerID int) {
-
 			defer wg.Done()
-
 			Worker(
 				workerID,
 				url,
@@ -141,30 +142,20 @@ func DownloadFile(url, output string, workers int) error {
 	}
 
 	done := make(chan struct{})
-
 	go func() {
-
 		ticker := time.NewTicker(
 			500 * time.Millisecond,
 		)
-
 		defer ticker.Stop()
 
 		for {
-
 			select {
-
 			case <-ticker.C:
-
 				metrics.mu.RLock()
-
 				downloaded := metrics.DownloadedBytes
 				total := metrics.TotalBytes
-
 				metrics.mu.RUnlock()
-
-				percent := float64(downloaded) /
-					float64(total) * 100
+				percent := float64(downloaded) / float64(total) * 100
 
 				printProgress(
 					percent,
@@ -179,9 +170,7 @@ func DownloadFile(url, output string, workers int) error {
 	}()
 
 	wg.Wait()
-
 	close(done)
-
 	close(errCh)
 
 	for err := range errCh {
