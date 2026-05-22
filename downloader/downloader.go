@@ -97,19 +97,35 @@ func DownloadFile(url, output string, workers int) error {
 		)
 	}
 
-	tempDir, err := utils.CreateTempDir("")
+	checkpointPath := output + ".meta.json"
+
+	checkpoint, err := LoadCheckpoint(
+		checkpointPath,
+	)
+
+	if err == nil {
+		LogWorker(
+			-1,
+			"restoring checkpoint",
+		)
+	}
+
+	tempDir := output + ".parts"
+	err = os.MkdirAll(
+		tempDir,
+		0755,
+	)
+
 	if err != nil {
 		return fmt.Errorf(
-			"error creating temp dir: %w",
+			"failed to create parts dir: %w",
 			err,
 		)
 	}
 
-	defer os.RemoveAll(tempDir)
-
 	sources := []*Source{
 		{
-			URL: url,
+			URL:     url,
 			Healthy: true,
 		},
 	}
@@ -120,9 +136,43 @@ func DownloadFile(url, output string, workers int) error {
 		sources,
 	)
 
+	if checkpoint != nil {
+		scheduler.NextByte = checkpoint.NextByte
+		scheduler.FailedQueue = checkpoint.FailedChunks
+		scheduler.CompletedChunks = checkpoint.CompletedChunks
+	}
+
 	metrics := NewMetrics(size)
 	var wg sync.WaitGroup
 	errCh := make(chan error, workers)
+	done := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(
+			3 * time.Second,
+		)
+
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				SaveCheckpoint(
+					checkpointPath,
+					scheduler,
+					scheduler.CompletedChunks,
+				)
+				return
+
+			case <-ticker.C:
+				SaveCheckpoint(
+					checkpointPath,
+					scheduler,
+					scheduler.CompletedChunks,
+				)
+			}
+		}
+	}()
 
 	for i := 0; i < workers; i++ {
 		metrics.RegisterWorker(i)
@@ -141,21 +191,23 @@ func DownloadFile(url, output string, workers int) error {
 		}(i)
 	}
 
-	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(
 			500 * time.Millisecond,
 		)
 		defer ticker.Stop()
-
 		for {
 			select {
 			case <-ticker.C:
 				metrics.mu.RLock()
+
 				downloaded := metrics.DownloadedBytes
 				total := metrics.TotalBytes
 				metrics.mu.RUnlock()
-				percent := float64(downloaded) / float64(total) * 100
+
+				percent :=
+					float64(downloaded) /
+						float64(total) * 100
 
 				printProgress(
 					percent,
@@ -192,6 +244,13 @@ func DownloadFile(url, output string, workers int) error {
 		)
 	}
 
-	LogWorker(-1, "download completed")
+	os.RemoveAll(tempDir)
+	os.Remove(checkpointPath)
+
+	LogWorker(
+		-1,
+		"download completed",
+	)
+
 	return nil
 }

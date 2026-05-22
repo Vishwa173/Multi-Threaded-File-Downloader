@@ -16,6 +16,8 @@ type Scheduler struct {
 	FailedQueue []Chunk
 
 	Sources []*Source
+
+	CompletedChunks []Chunk
 }
 
 func NewScheduler(
@@ -174,4 +176,17 @@ func (s *Scheduler) ReleaseSource(
 			source.Healthy = false
 		}
 	}
+}
+
+func (s *Scheduler) MarkChunkCompleted(
+	chunk Chunk,
+) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.CompletedChunks = append(
+		s.CompletedChunks,
+		chunk,
+	)
 }

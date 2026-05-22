@@ -40,6 +40,19 @@ func Worker(
 		source := scheduler.SelectBestSource()
 		chunk.WorkerID = workerID
 		chunk.Status = ChunkDownloading
+
+		if ChunkExists(tempDir, chunk) {
+			LogChunk(
+				chunk.Index,
+				"already exists, skipping",
+			)
+
+			scheduler.MarkChunkCompleted(chunk,)
+			metrics.MarkChunkCompleted()
+			chunkIndex++
+			continue
+		}
+
 		startTime := time.Now()
 
 		err := DownloadChunk(
@@ -62,9 +75,7 @@ func Worker(
 		}
 
 		duration := time.Since(startTime,).Seconds()
-
 		bytes := chunk.End - chunk.Start + 1
-
 		speed := float64(bytes) / duration
 
 		metrics.UpdateWorkerSpeed(
@@ -79,6 +90,7 @@ func Worker(
 		)
 
 		metrics.MarkChunkCompleted()
+		scheduler.MarkChunkCompleted(chunk,)
 
 		LogChunk(
 			chunk.Index,
