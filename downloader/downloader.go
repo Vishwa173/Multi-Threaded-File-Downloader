@@ -86,7 +86,7 @@ func resolveFinalURL(url string) (string, error) {
     return resp.Request.URL.String(), nil
 }
 
-func DownloadFile(url, output string, workers int) error {
+func DownloadFile(url, output string, workers int, expectedHash string,) error {
 	InitLogger()
 
 	size, err := getFileSize(url)
@@ -244,13 +244,30 @@ func DownloadFile(url, output string, workers int) error {
 		)
 	}
 
+	if expectedHash != "" {
+		LogWorker(-1,"verifying sha256 integrity",)
+		err = ValidateSHA256(output,expectedHash,)
+
+		if err != nil {
+			return fmt.Errorf(
+				"integrity validation failed: %w",
+				err,
+			)
+		}
+
+		LogWorker(-1,"integrity verification passed",)
+	}
+
+	hash, err := ComputeSHA256(output)
+	if err == nil {
+		LogWorker(-1,fmt.Sprintf("final sha256: %s",hash,),
+		)
+	}
+
 	os.RemoveAll(tempDir)
 	os.Remove(checkpointPath)
 
-	LogWorker(
-		-1,
-		"download completed",
-	)
+	LogWorker(-1,"download completed",)
 
 	return nil
 }
