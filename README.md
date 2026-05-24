@@ -1,104 +1,102 @@
-# Multi-Threaded Distributed Download Accelerator
+# Multi-Threaded Adaptive File Downloader
 
-A high-performance distributed file downloader built in Go, designed to optimize large file transfers through adaptive chunk scheduling, concurrent worker pools, fault-tolerant retries, resumable downloads, and integrity-aware transfer validation.
+A modular high-performance file downloader built in Go, designed to optimize large file transfers using adaptive chunk scheduling, concurrent worker pools, resumable downloads, and integrity-aware transfer validation.
 
-The system leverages goroutines, mutex synchronization, HTTP range requests, and centralized orchestration to maximize throughput while maintaining reliability under unstable network conditions.
+The system combines concurrent segmented downloading, centralized scheduling, fault-tolerant retries, and persistent checkpointing to improve throughput and reliability under unstable network conditions.
+
+---
+
+# Overview
+
+The downloader is designed as a systems-focused networking project exploring:
+
+- Concurrent network programming
+- Adaptive scheduling systems
+- Fault-tolerant distributed workflows
+- Persistent state management
+- Reliability engineering
+- Binary integrity verification
+
+The architecture implements:
+
+- Concurrent segmented downloads using goroutines
+- Adaptive throughput-aware chunk scheduling
+- Centralized retry orchestration
+- Persistent resumable downloads
+- Source-aware scheduling foundations
+- SHA256 integrity validation
+
+---
+
+# System Architecture
+
+## Download Pipeline
+
+```text
+File Request
+      ↓
+Central Scheduler
+      ↓
+Dynamic Chunk Allocation
+      ↓
+Worker Pool Execution
+      ↓
+Concurrent HTTP Range Downloads
+      ↓
+Persistent Chunk Storage
+      ↓
+Chunk Merge
+      ↓
+SHA256 Integrity Verification
+      ↓
+Final Output
+```
 
 ---
 
 # Features
 
-## Concurrent Multi-Threaded Downloading
-- Parallel segmented downloads using goroutines
-- Worker-pool architecture with centralized task scheduling
-- Adaptive chunk allocation for efficient resource utilization
+## Concurrent Segmented Downloading
 
----
+- Parallel chunk-based downloading using goroutines
+- Worker-pool architecture with centralized scheduling
+- Dynamic runtime chunk allocation
+- Efficient large-file transfer optimization
 
-## Adaptive Scheduling Engine
-- Runtime-generated chunk scheduling
+## Adaptive Scheduling
+
 - Throughput-aware chunk sizing
 - Dynamic worker load balancing
 - Exponential moving average (EMA) throughput tracking
+- Runtime-generated chunk scheduling
 
----
+## Fault Tolerance
 
-## Fault-Tolerant Retry System
 - Centralized retry orchestration
 - Failed chunk requeueing
-- Exponential backoff strategy
-- Retry caps to prevent infinite loops
-
----
-
-## Multi-Source Download Architecture
-- Source-aware scheduling foundations
-- Source health tracking
-- Throughput-aware source selection
-- Dynamic load balancing across sources
-
----
+- Exponential backoff retry strategy
+- Retry caps to prevent infinite retry loops
 
 ## Resumable Downloads
+
 - Persistent checkpoint metadata
 - Crash-safe recovery
-- Chunk persistence across restarts
+- Persistent chunk storage
 - Selective chunk reuse during resume
 
----
-
 ## Integrity Validation
+
 - SHA256 file integrity verification
 - Corruption detection
 - Optional expected-hash validation
 - Deterministic binary reconstruction
 
----
+## Multi-Source Scheduling Foundations
 
-# Architecture Overview
-
-```text
-                    +----------------------+
-                    |   Central Scheduler  |
-                    +----------------------+
-                     |    |    |    |
-         +-----------+    |    |    +-----------+
-         |                |    |                |
-         v                v    v                v
-
-    +---------+      +---------+          +---------+
-    | Worker  |      | Worker  |   ...    | Worker  |
-    +---------+      +---------+          +---------+
-         |                |                    |
-         +-------- Concurrent Downloads -------+
-                          |
-                          v
-                +------------------+
-                | Chunk Storage    |
-                | (.part files)    |
-                +------------------+
-                          |
-                          v
-                +------------------+
-                | Final Merge      |
-                +------------------+
-                          |
-                          v
-                +------------------+
-                | SHA256 Verify    |
-                +------------------+
-```
-
----
-
-# Tech Stack
-
-- **Language:** Go (Golang)
-- **Concurrency:** Goroutines, Channels, Mutexes
-- **Networking:** HTTP Range Requests
-- **Synchronization:** sync.Mutex, sync.RWMutex
-- **Persistence:** JSON Checkpointing
-- **Integrity:** SHA256 Hashing
+- Source-aware scheduling architecture
+- Source health tracking
+- Throughput-aware source selection
+- Dynamic source load balancing
 
 ---
 
@@ -114,12 +112,12 @@ multi-threaded-downloader/
 │   ├── checkpoint.go
 │   ├── downloader.go
 │   ├── integrity.go
+│   ├── logger.go
 │   ├── metrics.go
 │   ├── scheduler.go
 │   ├── storage.go
 │   ├── types.go
-│   ├── worker.go
-│   └── logger.go
+│   └── worker.go
 │
 ├── utils/
 │   ├── download.go
@@ -131,60 +129,92 @@ multi-threaded-downloader/
 
 ---
 
-# How It Works
+# Core Components
 
-## 1. File Segmentation
+## scheduler.go
 
-The scheduler dynamically generates byte-range chunks using HTTP range requests.
+Implements:
+- centralized chunk scheduling
+- adaptive chunk sizing
+- retry orchestration
+- source-aware scheduling
+- load balancing logic
 
-Example:
+## worker.go
 
-```text
-Chunk 0 → bytes 0-8MB
-Chunk 1 → bytes 8MB-16MB
-Chunk 2 → bytes 16MB-24MB
-```
+Implements:
+- worker pool execution
+- concurrent chunk downloads
+- throughput measurement
+- retry-aware execution
 
----
+## checkpoint.go
 
-## 2. Worker Pool Execution
+Implements:
+- persistent checkpoint storage
+- scheduler state persistence
+- resumable download restoration
 
-Persistent workers continuously pull chunks from the centralized scheduler.
+## integrity.go
 
-- Fast workers naturally process more chunks
-- Slow workers receive smaller workloads
-- Dynamic balancing improves throughput
+Implements:
+- SHA256 computation
+- integrity validation
+- corruption detection
 
----
+## storage.go
 
-## 3. Fault Recovery
-
-Failed chunks are:
-- requeued
-- retried with exponential backoff
-- redistributed to available workers
-
----
-
-## 4. Resume Support
-
-During downloads:
-- chunk files persist on disk
-- checkpoint metadata is periodically saved
-
-On restart:
-- completed chunks are reused
-- unfinished chunks resume automatically
+Implements:
+- chunk persistence
+- chunk existence validation
+- resumable chunk reuse
 
 ---
 
-## 5. Integrity Verification
+# Design Decisions
 
-After merge:
-- SHA256 hash is computed
-- optional expected-hash verification performed
+## Why Adaptive Chunk Scheduling?
 
-This guarantees deterministic binary reconstruction.
+Static chunk sizes can lead to inefficient resource utilization when workers operate under varying network conditions. Adaptive scheduling dynamically adjusts chunk sizes based on observed throughput to improve overall download efficiency.
+
+## Why Centralized Scheduling?
+
+A centralized scheduler simplifies:
+- load balancing
+- retry orchestration
+- chunk ownership management
+- adaptive scheduling decisions
+
+while avoiding duplicate chunk assignments.
+
+## Why Persistent Checkpointing?
+
+Large downloads are vulnerable to:
+- crashes
+- interruptions
+- unstable network conditions
+
+Persistent checkpointing enables resumable downloads without restarting transfers from scratch.
+
+## Why SHA256 Validation?
+
+Segmented downloads may silently produce corrupted outputs due to:
+- incomplete writes
+- network instability
+- corrupted responses
+
+SHA256 verification guarantees deterministic binary reconstruction.
+
+---
+
+# Technologies Used
+
+- Go (Golang)
+- Goroutines
+- Mutex Synchronization
+- HTTP Range Requests
+- JSON Checkpointing
+- SHA256 Hashing
 
 ---
 
@@ -196,8 +226,6 @@ This guarantees deterministic binary reconstruction.
 git clone https://github.com/<your-username>/multi-threaded-downloader.git
 cd multi-threaded-downloader
 ```
-
----
 
 ## Build
 
@@ -256,53 +284,55 @@ Re-running the same command resumes the download automatically.
 
 ---
 
-# Example Features Demonstrated
+# Example Workflow
 
-- Adaptive scheduling
-- Distributed task orchestration
-- Throughput-aware chunk allocation
-- Fault-tolerant retry systems
-- Persistent state management
-- Binary integrity validation
-- Concurrent network programming
+## Query
+
+```text
+Download large binary file
+```
+
+## Pipeline
+
+```text
+Chunk generation
+→ concurrent segmented downloads
+→ adaptive scheduling
+→ retry orchestration
+→ persistent chunk storage
+→ resumable recovery
+→ chunk merge
+→ SHA256 verification
+→ final output generation
+```
 
 ---
 
 # Future Improvements
 
+Potential future extensions include:
+
 - HTTP/2 multiplexing
 - Real multi-mirror downloading
 - Bandwidth throttling
-- CLI flags
+- CLI flag support
 - Per-chunk hashing
 - Peer-to-peer transfer extensions
-- Web dashboard / monitoring
+- Web dashboard and monitoring
 
 ---
 
-# Benchmarks
+# Learning Outcomes
 
-| Workers | Avg Speed |
-|---|---|
-| 1 | Baseline |
-| 4 | ~3-4× improvement |
-| 8 | Higher throughput under stable networks |
+This project explores core concepts in:
 
-*(Results depend on network bandwidth and server range-request support.)*
-
----
-
-# Key Concepts Demonstrated
-
-- Concurrent systems programming
-- Networking and HTTP internals
-- Distributed scheduling concepts
-- Fault tolerance and recovery
-- Adaptive load balancing
-- Persistent checkpointing
-- Systems reliability engineering
-
----
+- Concurrent Systems Programming
+- Networking and HTTP Internals
+- Adaptive Scheduling Systems
+- Fault Tolerance and Recovery
+- Persistent State Management
+- Reliability Engineering
+- Binary Integrity Verification
 
 ---
 
